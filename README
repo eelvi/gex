@@ -1,0 +1,6 @@
+something that resembles a regex engine
+
+to make the static library:
+    make
+to run tests:
+    make test
