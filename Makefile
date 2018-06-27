@@ -52,7 +52,6 @@ test.o: src/tests.c
 
 test: test.o build
 	$(CC) $(CCFLAGS) -L. test.o -lgex -o $@
-	sleep 1 && ./test
 
 build: libgex.a
 
