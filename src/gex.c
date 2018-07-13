@@ -3,7 +3,7 @@
     author: /eelvi
 
 supported: 
-    \d, \w, text, +, *, .
+    \d, \w, \W, text, +, *, .
     [^a-z0-9] 
 
 missing features:
@@ -21,15 +21,16 @@ work in progress planned over the next decade or so:
 #include "gex.h"
 #include "gex_help.h"
 
-#define test 1
-
 #define SETPAT_SUCCESS 0
 #define SETPAT_FAIL 1
 #define SETPAT_END 2
 
+//the function definition of each of the states
 #define STATE( STATE_NAME )\
     void S_ ## STATE_NAME (sdata *d)
 
+// sets the function pointer the the struct pointed to by STK then return from the current function
+// to be used in a loop executing until S_ACCEPT or S_REJECT is set
 #define transition( STK )\
     do{\
         d->cst.state = (state_fx) S_ ## STK ;\
@@ -40,10 +41,12 @@ work in progress planned over the next decade or so:
 
 #define is_repeating( REP ) (((REP) == '*') || ((REP) == '+'))
 
+// returns whether a character follows what was before it, ex. the '+' in \w+
 #define follows(CH) ( ((CH) == '+') || ((CH) == '*') || ((CH) == '?') )
 
 
-int check_charclass(const char *srcs, charclass *chcls){
+// check whether current source character matches the character class
+int check_charclass(const char *src_str, charclass *chcls){
     int i = 0;
     int inverse = 0;
     if (chcls->size <= 0){
@@ -53,58 +56,76 @@ int check_charclass(const char *srcs, charclass *chcls){
         i++;
         inverse = 1;
     }
+
+/////////////////////////////////////
 #define loop(IFMTCH, ELSE )\
 for ( i; i < chcls->size; i++){\
-    if ( (*srcs >= chcls->cls[i].low) && (*srcs <= chcls->cls[i].high) ){\
+    if ( (*src_str >= chcls->cls[i].low) && (*src_str <= chcls->cls[i].high) ){\
         return IFMTCH;\
     }\
 }\
 return ELSE;
+/////////////////////////////////////
+
     if (inverse){
         loop(0, 1);
     }
     else {
         loop(1, 0);
     }
+
 #undef loop
 }
 
-int check_assoc(const char *srcs, drcv *r, drcv_table *tbl){
-    if (!srcs || !r || !tbl){
+// serves as a polymorhpic checker for directives that contain a drcv.wants==ASSOC_ESC value
+int check_assoc(const char *src_str, drcv *directive, drcv_table *tbl){
+
+    if (!src_str || !directive || !tbl){
         error__exit(1, "null passed to check_assoc()");
     }
-    if ( tbl->ascs[r->assoc].atype == ASSOC_CHARCLASS){
-        return check_charclass(srcs, &tbl->ascs[r->assoc].chcls);
+    if ( tbl->ascs[directive->assoc].atype == ASSOC_CHARCLASS){
+        return check_charclass(src_str, &tbl->ascs[directive->assoc].chcls);
     }
     else
         error__exit(1, "check_assoc(): unknown assoc type.");
-
 }
-int check(const char *srcs, drcv *r, drcv_table *tbl){
-    int src = *srcs;
-    int pat_ch = r->wants & 0xFF;
-    int pat_peek = (r->wants & 0xFF00) >> 8;
+
+int check(const char *src_str, drcv *directive, drcv_table *tbl){
+    int src_ch = *src_str;
+    int pat_ch = directive->wants & 0xFF;
+    int pat_peek = (directive->wants & 0xFF00) >> 8;
 
     if (pat_ch == '\\')
         switch(pat_peek){
             case 'w':
-                return _isalpha(src);
+                return _isalpha(src_ch);
             case 'd':
-                return _isdigit(src);
+                return _isdigit(src_ch);
+            case 's':
+                return _isspace(src_ch);
+            case 'W':
+                return _isalpha(src_ch) == 0;
+            case 'D':
+                return _isdigit(src_ch) == 0;
+            case 'S':
+                return _isspace(src_ch) == 0;
             default:
-                return pat_peek == src;
+                return pat_peek == src_ch;
         }
     else if (pat_ch == '.'){
-        return src != '\0';
+        return 1;
     }
     else if (pat_ch == ASSOC_ESC){
-        return check_assoc(srcs, r, tbl);
+        return check_assoc(src_str, directive, tbl);
     }
     else
-        return src == pat_ch;
+        return src_ch == pat_ch;
 }
 
-//will start with the character '['
+// goal: fill a directive with necessary info indicating that the directive is using
+// associated data (stored in d->table) and register an entry in the associated data table which contains
+// the character class as (min,max) ascii integers
+//*starts with the character '['
 int parse_charclass(drcv *target, sdata *d){
 #define curr() ((charclass *)(& (d->table.ascs[ascs_idx])))
 #define do_getch() (*(++(d->cst.pat)))
@@ -151,10 +172,13 @@ int parse_charclass(drcv *target, sdata *d){
     }
     return SETPAT_SUCCESS;
 }
+
+// goal: parse a single directive from the pattern, to be called repetedly until
+// it returns SETPAT_END
 int set_match(sdata *d, drcv *r){
     int ch =  *(d->cst.pat);
     int rs = 0;
-    int handeled = 0;
+    int ext_handeled = 0;
     _memset(r, 0, sizeof(drcv));
 
     if (!ch)
@@ -168,12 +192,12 @@ int set_match(sdata *d, drcv *r){
         if( (rs = parse_charclass(r, d)) != SETPAT_SUCCESS ){
             return rs;
         }
-        handeled = 1;
+        ext_handeled = 1;
     }
     else{
         (d->cst.pat)++;
     }
-    r->wants = (handeled)? ASSOC_ESC : ch;
+    r->wants = (ext_handeled)? ASSOC_ESC : ch;
     //(d->cst.pat) is at next unseen char
 
     ch = *(d->cst.pat);
@@ -184,6 +208,7 @@ int set_match(sdata *d, drcv *r){
     return SETPAT_SUCCESS;
 }
 
+//forward declarations
 STATE(execute);
 STATE(get_next);
 
@@ -191,6 +216,10 @@ STATE(pat_fail){
     error__exit(2,  "pattern failed: %s\n", d->cst.pat);
 }
 
+//goal: this is arrived to whenever a directive fails to match
+//so what we do in the current implementation is look at previous directives and attempt to reduce their yeild
+// if that is possible, otherwise if we reach the first directive (meaning all directives after it can't be reduced any further)
+// then we reject the whole input
 STATE(local_reject){
     int fix = 0;
 #define tabel (d->table)
@@ -216,13 +245,14 @@ STATE(local_reject){
 #undef current_dir
 }
 
+//this is called to finalize our match, it should probably be refactored
 STATE(local_accept){
     d->match.matched = 1;
     d->match.end = d->cst.s_idx;
     transition(ACCEPT);
 }
 
-//optimize str calculation
+//this fetches the next directive and executes it, it serves a central role in the flow of execution
 STATE(get_next){
     int dir_idx = (d->table.idx)++;
     if (d->table.idx < (d->table.size)){
@@ -241,7 +271,10 @@ STATE(get_next){
         transition(local_accept);
 }
 
-//TODO: optimize
+
+// this does the task of:
+// 1- checking if the current source character matches the current directive
+// 2- if so and our directive is a one that repeats then do so until we can no longer match
 STATE(execute){
 
     int sdx = d->cst.s_idx;
@@ -266,6 +299,8 @@ STATE(execute){
 #undef current_pos
 }
 
+// this prepares the match by repeatedly inserting directives into our directive table then starts the thing by 
+// transitioning into prepare_pat()
 STATE(prepare_pat){
     int s;
     d->table.size = 0;

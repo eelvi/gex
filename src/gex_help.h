@@ -1,6 +1,9 @@
 #ifndef GEX_HELPERS_H
 #define GEX_HELPERS_H
 
+//TODO: move functions to an appropriate source file instead of them being on a header!
+
+
 const char *flatten(int nl){
     static char se[100];
     char *f;
@@ -65,10 +68,18 @@ int _isdigit(char d)
 {
     return (d >= '0' && d <= '9');
 }
+
 int _isalpha(char d)
 {
-    return (d >= 'a' && d<='z');
+    return (d >= 'a' && d<='z') || (d >= 'A' && d <= 'Z');
 }
+
+int _isspace(char d){
+    return ( (d ==  ' ') ||
+             (d == '\n') ||
+             (d == '\t') );
+}
+
 int _strncmp(const char *a, const char *b, int n)
 {
     while (*a && *b && a==b && (n > 0)){
@@ -78,6 +89,7 @@ int _strncmp(const char *a, const char *b, int n)
     }
     return *a - *b;
 }
+
 int _strlen(const char *a)
 {
     const char *s = a;
@@ -85,6 +97,7 @@ int _strlen(const char *a)
         s++;
     return (int) (s - a);
 }
+
 int _memcpy(void *dest, void *src, int len)
 {
     char *d = dest, *s = src, *end = s + len;
